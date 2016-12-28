@@ -11,9 +11,9 @@ import os
 
 
 BASE_URL = 'http://api.genius.com'
-headers = {'Authorization': 'Bearer [insert bearer token here]'}
+headers = {'Authorization': 'Bearer 1fD64UHpd-b-JoPbyL-zmhmweu-VXSPU3HGQ0Nw9EoSiGvAa6HHEwaV2n2rHj55D'}
 
-class Artist_and_Albums:
+class Genius_Scraper:
     def __init__(self, artist, albums):
         self.artist = artist
         self.albums = [album.lower() for album in albums]
@@ -131,8 +131,8 @@ class Artist_and_Albums:
         lyrics = lyrics.replace(u"\xeb", "e") #e with dots on top
         lyrics = lyrics.replace(u"\xe4", "a") #a with dots on top
         lyrics = lyrics.replace(u"\xe7", "c") #c with squigly bottom
-        lyrics = lyrics.replace("\n", "")
-        lyrics = lyrics.replace("\r", "")
+        #lyrics = lyrics.replace("\n", "")
+        #lyrics = lyrics.replace("\r", "")
         return lyrics
     
     def create_txt(self):
@@ -146,12 +146,28 @@ class Artist_and_Albums:
         #iterate through as many pages as possible - once an error is hit, break from the loop        
                
         for i in range(1, 101):
+            j = int(i)            
+            rts_i = str(j)
+            #print("ON PAGE " + rts_i)
             try:
-            
+                
                 data = {"page": i}
                 response = requests.get(artist_songs_url, data=data, headers=headers)
                 artist_songs_info = response.json()
                 songs = artist_songs_info["response"]["songs"]
+                
+                #check to see if we already have the text files from this page and skip it if so
+                try:                
+                    check_song = songs[-1]
+                    print("ON PAGE " + rts_i)
+                except(IndexError):
+                    break
+                    print("ALL DONE!!!")
+                check_song_api_path = check_song["api_path"]
+                check_song_title = self.get_song_title(check_song_api_path)
+                check_lyric_path = artist_folder_path + '/%s' % self.strip(check_song_title) + '.txt'
+                if os.path.exists(check_lyric_path):
+                    continue
                 for song in songs:
                     song_api_path = song["api_path"]
                     song_title = self.get_song_title(song_api_path)
@@ -171,6 +187,17 @@ class Artist_and_Albums:
                                             ifile.write(lyrics)
                                         except UnicodeEncodeError as e:
                                             print(e)
+                                else:
+                                    if os.path.getsize(lyric_path) == 0:
+                                        print(".......CREATING TXT FILE " + song_title)
+                                        lyrics = self.clean_lyrics(song_api_path)                                    
+                                        with open(lyric_path, "w") as ifile:
+                                            try:
+                                                ifile.write(lyrics)
+                                            except UnicodeEncodeError as e:
+                                                print(e)
+                                    else:
+                                        print("TXT FILE ALREADY EXISTS FOR " + song_title)
                             else:
                                 #print(song_title + " is not in any of the given albums!")
                                 continue
