@@ -1,30 +1,25 @@
 # -*- coding: utf-8 -*-
 """
-Created on Sat Dec 24 21:26:06 2016
+Created on Tue Dec 27 22:30:05 2016
 
 @author: Javesh
 """
-
 import requests
+import json
 from bs4 import BeautifulSoup
-import os, json
-import string
-import pandas as pd
+import os
 
 
-BASE_URL = "http://api.genius.com"
-proxies = [{"http": "http://124.88.67.81"}, {"http": "http://124.88.67.52"}, {"http": "http://124.88.67.17"}]
-headers = {'Authorization': 'Bearer [insert you bearer token here]'}
+BASE_URL = 'http://api.genius.com'
+headers = {'Authorization': 'Bearer [insert bearer token here]'}
 
-class Genius_Scraper:
+class Artist_and_Albums:
     def __init__(self, artist, albums):
-        #artist is the artist name for which you want songs
-        #albums is the list of albumbs for which you want songs
         self.artist = artist
         self.albums = [album.lower() for album in albums]
-        self.lyrics_df = self.compile_lyrics()
-        
-    def strip(s):
+        self.artist_api_path = self.get_artist_api_path()
+    
+    def strip(self, s):
         s = s.replace('?', '')
         s = s.replace('*', '')
         s = s.replace('/', '_')
@@ -32,85 +27,84 @@ class Genius_Scraper:
         s = s.replace(')', '')
         s = s.replace('"', '')
         return s
-            
-    
-    def get_artist_api_path(self, artist_name):
+        
+    def get_artist_api_path(self):
         """
-        Find the artists id on Genius by accessing a song by the artist via
+        Find the artist id on Genius by accessing a song by the artist via 
         the artist's page on Genius. This id is then made into the api path
-        and returned by the function.
+        and returned by the function
         """
+        artist = self.artist
         search_url = BASE_URL + "/search"
-        data = {'q': artist_name}
-        response = requests.get(search_url, data=data, headers=headers, proxies = proxies)
+        data = {'q': artist}
+        response = requests.get(search_url, data=data, headers=headers)
         artist_info = response.json()
+        #keep looping through the artists hits until it is confirmed that we have the right artist api path 
         for hit in artist_info["response"]["hits"]:
             song_api_path = hit["result"]["api_path"]
             song_url = BASE_URL + song_api_path
-            response_2 = requests.get(song_url, headers=headers, proxies = proxies)
-            new_json = response_2.json()
-            artist = new_json["response"]["song"]["primary_artist"]
-            if (artist["name"]) == (artist_name):
-                artist_api_path = artist["api_path"]
-                return artist_api_path
-                break
+            response = requests.get(song_url, headers=headers)
+            song_info = response.json()
+            artist_name = song_info["response"]["song"]["primary_artist"]
+            if artist_name["name"] == artist:
+                return artist_name["api_path"]
             else:
-                print ("Could not find %s" % artist_name)                
                 return None
-        
-    def get_song_api_paths(self, artist_api_path):
+    """
+    def get_song_api_paths(self):
+        artist_api_path = self.get_artist_api_path()
         song_api_paths = []
-        artist_url = BASE_URL + artist_api_path + "/songs"
-        data = {"per page":50, "page":1}
-        while True:
-            response = requests.get(artist_url, data=data, headers=headers, proxies = proxies)
-            new_json = response.json()
-            songs = new_json["response"]["songs"]
+        artist_songs_url = BASE_URL + artist_api_path + "/songs"
+        #iterate through as many pages as possible - once an error is hit, break from the loop        
+        for i in range(1, 51):
+            #try:
+            data = {"page": i}
+            response = requests.get(artist_songs_url, data=data, headers=headers)
+            artist_songs_info = response.json()
+            songs = artist_songs_info["response"]["songs"]
             for song in songs:
+                song_api_path = song["api_path"]
                 if song['primary_artist']['api_path'] == artist_api_path:
-                    song_api_paths.append(song["api_path"])
+                    try:
+                        if self.get_song_info(song_api_path)["response"]["song"]["album"]["name"].lower() in self.albums:
+                            print("Appending " + get_song_title(song_api_path))                            
+                            song_api_paths.append(song_api_path)
+                        else:
+                            print(self.get_song_title(song_api_path) + " is not in any of the given albums!")
+                            continue
+                    except (TypeError, ValueError):
+                        print(self.get_song_title(song_api_path) + " album could not be found!")
                 else:
-                    continue
-            if len(songs) < 50:
-                break
-            else:
-                if "page" in data:
-                    data["page"] = data["page"] + 1
-                else:
-                    break
+                    print(self.artist + " is not the primary artist for " + self.get_song_title(song_api_path))
+            i +=1
+        #except()
         return list(set(song_api_paths))
-            
+        """
     def get_song_info(self, song_api_path):
         song_url = BASE_URL + song_api_path
-        response = requests.get(song_url, headers=headers, proxies = proxies)
+        response = requests.get(song_url, headers=headers)
         full_song_info = response.json()
         return full_song_info
-        
+    
     def get_song_title(self, song_api_path):
-                
         full_song_info = self.get_song_info(song_api_path)
         song_title = full_song_info["response"]["song"]["title"]
         return song_title
     
-    def get_song_title_path(self, song_api_path):
-        song_title = self.get_song_title(song_api_path)
-        song_title = song_title.replace(' ', '_')
-        song_title = song_title.replace('/', '_')
-        return song_title
-        
     def get_song_web_path(self, song_api_path):
         full_song_info = self.get_song_info(song_api_path)
         song_web_path = full_song_info["response"]["song"]["path"]
-        return song_web_path      
-        
+        return song_web_path
+    
     def get_lyrics(self, song_api_path):
         song_web_path = self.get_song_web_path(song_api_path)
-        page_url = "http://genius.com" + song_web_path
-        page = requests.get(page_url, proxies=proxies)
-        html = BeautifulSoup(page.text, "html.parser")
-        [h.extract() for h in html('script')]
+        lyrics_url = "http://genius.com" + song_web_path
+        lyrics = requests.get(lyrics_url)
+        html = BeautifulSoup(lyrics.text, "html.parser")
+        [h.extract for h in html('script')]
         lyrics = html.find("lyrics").get_text()
         return lyrics
+    
     def clean_lyrics(self, song_api_path):
         lyrics = self.get_lyrics(song_api_path)
         lyrics = lyrics.replace(u"\u2019", "'") #right quotation mark
@@ -140,120 +134,63 @@ class Genius_Scraper:
         lyrics = lyrics.replace("\n", "")
         lyrics = lyrics.replace("\r", "")
         return lyrics
-    """    
-    def song_ids_already_scraped(self, artist_folder_path, force=False):
-        #check for ids already scraped so we don't redo
-      if force:
-        return []
-      song_ids = []
-      files = os.listdir(artist_folder_path)
-      for file_name in files:
-        dot_split = file_name.split('.')
-        #sometimes the file is empty, we don't want to include if that's the case
-        if dot_split[1] == 'txt':
-          try:
-            song_id = dot_split[0].split("_")[-1]
-            if os.path.getsize(artist_folder_path + '/' + file_name) != 0:
-              song_ids.append(song_id)
-          except:
-            pass
-        return song_ids
-    """
     
-    def create_lyrics_txt(self):
-        for artist_name in self.artists:
-            artist_folder_path = "artists/%s" % artist_name
-            artist_lyrics_path = "%s/lyrics" % artist_folder_path
-            artist_info_path = "%s/info" % artist_folder_path
-            
-            if not os.path.exists(artist_folder_path):
-                os.makedirs(artist_folder_path)
-            if not os.path.exists(artist_lyrics_path):
-                os.makedirs(artist_folder_path)
-            if not os.path.exists(artist_info_path):
-                os.makedirs(artist_info_path)
-            
-            artist_api_path = self.get_artist_api_path(artist_name)
-            song_api_paths = self.get_song_api_paths(artist_api_path)
-            
-            for path in song_api_paths:
-                full_song_info = self.get_song_info(path)                
-                
-                song_title_path = self.get_song_title_path(path)
-                print(song_title_path)
-                song_web_path = self.get_song_web_path(path)
-                
-                cleaned_lyrics = self.clean_lyrics(song_web_path)
-                
-                lyric_path = "%s/lyrics/%s.txt" % (artist_folder_path, song_title_path)
-                info_path = "%s/info/%s.txt" % (artist_folder_path, song_title_path)
-                
-                print(lyric_path)
-                
-                with open(info_path, "w") as lfile:
-                    lfile.write(json.dumps(full_song_info))
-                with open(lyric_path, "w") as ifile:
-                    try:
-                        ifile.write(cleaned_lyrics)
-                    except UnicodeEncodeError as error:
-                        print (error)
-                        
-                        
-    def compile_lyrics(self):
-        """artist = []        
-        song = []        
-        lyrics = []
-        """
-        lyrics_df= pd.DataFrame()
-        """
-        for artist_name in self.artists:
-            artist = []            
-            song = []
-            lyrics = []
-            artist_path = self.get_artist_api_path(artist_name)            
-            for path in self.get_song_api_paths(artist_path):
-                if self.get_song_info(path)["response"]["song"]["album"]["name"] in self.albums:                
-                    print (self.get_song_title(path))
-                    song.append(self.get_song_title(path))
-                    lyrics.append(self.clean_lyrics(path))
-                    print ('Done!')
-            artist = [artist_name] * len(song)
-            #temp_dict = {'Artist': artist, 'Song': song, 'Lyrics': lyrics}
-            temp_df = pd.DataFrame({'Artist': artist, 'Song': song, 'Lyrics': lyrics})
-            print (temp_df)
-            lyrics_df = lyrics_df.append(other = temp_df)
-        return lyrics_df
-        """                
-        artist_name = self.artist
-        album = []               
-        song = []
-        lyrics = []
-        artist_path = self.get_artist_api_path(artist_name)            
-        for path in self.get_song_api_paths(artist_path):
-            #if self.get_song_info(path)["response"]["song"]["album"]["name"] != None:    
+    def create_txt(self):
+        #set up directories to store txt files
+        artist_folder_path = "artists/%s" % self.artist
+        if not os.path.exists(artist_folder_path):
+            os.makedirs(artist_folder_path)
+        
+        artist_api_path = self.artist_api_path
+        artist_songs_url = BASE_URL + artist_api_path + "/songs"
+        #iterate through as many pages as possible - once an error is hit, break from the loop        
+               
+        for i in range(1, 101):
             try:
-                if self.get_song_info(path)["response"]["song"]["album"]["name"].lower() in self.albums:                
-                    print (self.get_song_title(path) + 'Downloading!')
-                    album.append(self.get_song_info(path)["response"]["song"]["album"]["name"])
-                    song.append(self.get_song_title(path))
-                    lyrics.append(self.clean_lyrics(path))
-                    print ('Done!')
-                else:
-                    print (self.get_song_title(path) + ' is not in any of the albums!')
-            except (TypeError) as e:
-                print(e)                
-                continue
-        #artist = [artist_name] * len(song)
-        #temp_dict = {'Artist': artist, 'Song': song, 'Lyrics': lyrics}
-        #temp_df = pd.DataFrame({'Artist': artist, 'Song': song, 'Lyrics': lyrics})
-        #print (temp_df)
-        lyrics_df = pd.DataFrame({'Album': album, 'Song': song, 'Lyrics': lyrics})
-        return lyrics_df    
+            
+                data = {"page": i}
+                response = requests.get(artist_songs_url, data=data, headers=headers)
+                artist_songs_info = response.json()
+                songs = artist_songs_info["response"]["songs"]
+                for song in songs:
+                    song_api_path = song["api_path"]
+                    song_title = self.get_song_title(song_api_path)
+                    lyric_path = artist_folder_path + '/%s' % self.strip(song_title) + '.txt'
+                    
+                    #check if primary artist is the right one`
+                    if song['primary_artist']['api_path'] == artist_api_path:
+                        try:
+                            #check if song is in list of albums
+                            if self.get_song_info(song_api_path)["response"]["song"]["album"]["name"].lower() in self.albums:
+                                #check if already downloaded                                
+                                if not os.path.exists(lyric_path):
+                                    print(".......CREATING TXT FILE " + song_title)
+                                    lyrics = self.clean_lyrics(song_api_path)                                    
+                                    with open(lyric_path, "w") as ifile:
+                                        try:
+                                            ifile.write(lyrics)
+                                        except UnicodeEncodeError as e:
+                                            print(e)
+                            else:
+                                #print(song_title + " is not in any of the given albums!")
+                                continue
+                        except (TypeError, ValueError):
+                            #print(self.get_song_title(song_api_path) + " album could not be found!")
+                            continue
+#==============================================================================
+#                     else:
+#                         print(self.artist + " is not the primary artist for " + self.get_song_title(song_api_path))   
+#==============================================================================
+            #i = i + 1
+            except():
+                break
+            
+        return os.listdir(artist_folder_path)
+            
+            
+       
+    
+                            
+                    
             
         
-        
-                
-        
-        
-
-
