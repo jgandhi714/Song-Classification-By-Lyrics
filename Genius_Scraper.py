@@ -13,13 +13,15 @@ import pandas as pd
 
 
 BASE_URL = "http://api.genius.com"
-#proxies = [{"http": "http://47.89.41.164"}, {"http": "http://70.248.28.23"}, {"http": "http://108.166.171.198"}]
-headers = {'Authorization': 'Bearer 1fD64UHpd-b-JoPbyL-zmhmweu-VXSPU3HGQ0Nw9EoSiGvAa6HHEwaV2n2rHj55D'}
+proxies = [{"http": "http://124.88.67.81"}, {"http": "http://124.88.67.52"}, {"http": "http://124.88.67.17"}]
+headers = {'Authorization': 'Bearer [insert you bearer token here]'}
 
 class Genius_Scraper:
-    def __init__(self, artists):
-        self.artists = artists
-        #self.create_lyrics_txt()
+    def __init__(self, artist, albums):
+        #artist is the artist name for which you want songs
+        #albums is the list of albumbs for which you want songs
+        self.artist = artist
+        self.albums = [album.lower() for album in albums]
         self.lyrics_df = self.compile_lyrics()
         
     def strip(s):
@@ -40,12 +42,12 @@ class Genius_Scraper:
         """
         search_url = BASE_URL + "/search"
         data = {'q': artist_name}
-        response = requests.get(search_url, data=data, headers=headers)
+        response = requests.get(search_url, data=data, headers=headers, proxies = proxies)
         artist_info = response.json()
         for hit in artist_info["response"]["hits"]:
             song_api_path = hit["result"]["api_path"]
             song_url = BASE_URL + song_api_path
-            response_2 = requests.get(song_url, headers=headers)
+            response_2 = requests.get(song_url, headers=headers, proxies = proxies)
             new_json = response_2.json()
             artist = new_json["response"]["song"]["primary_artist"]
             if (artist["name"]) == (artist_name):
@@ -59,9 +61,9 @@ class Genius_Scraper:
     def get_song_api_paths(self, artist_api_path):
         song_api_paths = []
         artist_url = BASE_URL + artist_api_path + "/songs"
-        data = {"per page":10, "page":2}
+        data = {"per page":50, "page":1}
         while True:
-            response = requests.get(artist_url, data=data, headers=headers)
+            response = requests.get(artist_url, data=data, headers=headers, proxies = proxies)
             new_json = response.json()
             songs = new_json["response"]["songs"]
             for song in songs:
@@ -69,18 +71,18 @@ class Genius_Scraper:
                     song_api_paths.append(song["api_path"])
                 else:
                     continue
-            if len(songs) < 10:
+            if len(songs) < 50:
                 break
             else:
                 if "page" in data:
                     data["page"] = data["page"] + 1
                 else:
-                    data["page"] = 1
+                    break
         return list(set(song_api_paths))
             
     def get_song_info(self, song_api_path):
         song_url = BASE_URL + song_api_path
-        response = requests.get(song_url, headers=headers)
+        response = requests.get(song_url, headers=headers, proxies = proxies)
         full_song_info = response.json()
         return full_song_info
         
@@ -104,7 +106,7 @@ class Genius_Scraper:
     def get_lyrics(self, song_api_path):
         song_web_path = self.get_song_web_path(song_api_path)
         page_url = "http://genius.com" + song_web_path
-        page = requests.get(page_url)
+        page = requests.get(page_url, proxies=proxies)
         html = BeautifulSoup(page.text, "html.parser")
         [h.extract() for h in html('script')]
         lyrics = html.find("lyrics").get_text()
@@ -203,25 +205,50 @@ class Genius_Scraper:
         lyrics = []
         """
         lyrics_df= pd.DataFrame()
-        
+        """
         for artist_name in self.artists:
             artist = []            
             song = []
             lyrics = []
             artist_path = self.get_artist_api_path(artist_name)            
             for path in self.get_song_api_paths(artist_path):
-                print (self.get_song_title(path))
-                song.append(self.get_song_title(path))
-                lyrics.append(self.clean_lyrics(path))
-                print ('Done!')
+                if self.get_song_info(path)["response"]["song"]["album"]["name"] in self.albums:                
+                    print (self.get_song_title(path))
+                    song.append(self.get_song_title(path))
+                    lyrics.append(self.clean_lyrics(path))
+                    print ('Done!')
             artist = [artist_name] * len(song)
             #temp_dict = {'Artist': artist, 'Song': song, 'Lyrics': lyrics}
             temp_df = pd.DataFrame({'Artist': artist, 'Song': song, 'Lyrics': lyrics})
             print (temp_df)
             lyrics_df = lyrics_df.append(other = temp_df)
         return lyrics_df
-                        
-            
+        """                
+        artist_name = self.artist
+        album = []               
+        song = []
+        lyrics = []
+        artist_path = self.get_artist_api_path(artist_name)            
+        for path in self.get_song_api_paths(artist_path):
+            #if self.get_song_info(path)["response"]["song"]["album"]["name"] != None:    
+            try:
+                if self.get_song_info(path)["response"]["song"]["album"]["name"].lower() in self.albums:                
+                    print (self.get_song_title(path) + 'Downloading!')
+                    album.append(self.get_song_info(path)["response"]["song"]["album"]["name"])
+                    song.append(self.get_song_title(path))
+                    lyrics.append(self.clean_lyrics(path))
+                    print ('Done!')
+                else:
+                    print (self.get_song_title(path) + ' is not in any of the albums!')
+            except (TypeError) as e:
+                print(e)                
+                continue
+        #artist = [artist_name] * len(song)
+        #temp_dict = {'Artist': artist, 'Song': song, 'Lyrics': lyrics}
+        #temp_df = pd.DataFrame({'Artist': artist, 'Song': song, 'Lyrics': lyrics})
+        #print (temp_df)
+        lyrics_df = pd.DataFrame({'Album': album, 'Song': song, 'Lyrics': lyrics})
+        return lyrics_df    
             
         
         
