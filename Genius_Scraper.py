@@ -8,17 +8,20 @@ import requests
 import json
 from bs4 import BeautifulSoup
 import os
-
+from difflib import SequenceMatcher as sm
+import shutil
 
 BASE_URL = 'http://api.genius.com'
-headers = {'Authorization': 'Bearer [insert token here]'}
+headers = {'Authorization': 'Bearer [insert your bearer token here]'}
 
 class Genius_Scraper:
     def __init__(self, artist, albums):
         self.artist = artist
         self.albums = [album.lower() for album in albums]
         self.artist_api_path = self.get_artist_api_path()
-        self.directory = "artists/%s" % self.artist
+        self.artist_directory = "artists/%s" % self.artist
+        self.lyrics_directory = self.artist_directory + "/lyrics"
+        self.clean_directory = self.artist_directory + "/clean"
     
     def strip(self, s):
         s = s.replace('?', '')
@@ -109,11 +112,11 @@ class Genius_Scraper:
     
     def create_txt(self):
         #set up directories to store txt files
-        artist_folder_path = "artists/%s" % self.artist
-        if not os.path.exists(artist_folder_path):
-            os.makedirs(artist_folder_path)
+        lyrics_folder_path = "artists/%s" % self.artist + '/lyrics'
+        if not os.path.exists(lyrics_folder_path):
+            os.makedirs(lyrics_folder_path)
         
-        blank_folder_path = artist_folder_path + '/blank'
+        blank_folder_path = lyrics_folder_path + '/blank'
         if not os.path.exists(blank_folder_path):
             os.makedirs(blank_folder_path)
         
@@ -145,7 +148,7 @@ class Genius_Scraper:
                 
                 check_song_api_path = check_song["api_path"]
                 check_song_title = self.get_song_title(check_song_api_path)
-                check_lyric_path = artist_folder_path + '/%s' % self.strip(check_song_title) + '.txt'
+                check_lyric_path = lyrics_folder_path + '/%s' % self.strip(check_song_title) + '.txt'
                 check_blank_path = blank_folder_path + '/%s' % self.strip(check_song_title) + '.txt'
                 if os.path.exists(check_lyric_path) or os.path.exists(check_blank_path):
                     print("SKIPPING PAGE " + j)
@@ -154,7 +157,7 @@ class Genius_Scraper:
                 for song in songs:
                     song_api_path = song["api_path"]
                     song_title = self.get_song_title(song_api_path)
-                    lyric_path = artist_folder_path + '/%s' % self.strip(song_title) + '.txt'
+                    lyric_path = lyrics_folder_path + '/%s' % self.strip(song_title) + '.txt'
                     blank_path = blank_folder_path + '/%s' % self.strip(song_title) + '.txt'
                     
                     #check if primary artist is the right one`
@@ -197,12 +200,94 @@ class Genius_Scraper:
             except():
                 break
             
-        return os.listdir(artist_folder_path)
-            
-            
-       
-    
-                            
-                    
-            
+        return os.listdir(lyrics_folder_path)
         
+    def create_new_directory(self):
+        #creates new directory called clean and copies every lyric file
+        clean_directory = self.artist_directory + '/clean'    
+        if not os.path.exists(clean_directory):
+            os.makedirs(clean_directory)
+            for lyric in os.listdir(self.lyrics_directory):
+                if os.path.isfile(self.lyrics_directory + '/' + lyric):
+                    shutil.copy(self.lyrics_directory + '/' + lyric, clean_directory + '/' + lyric)
+    
+    def remove_extras(self):
+        #removes files like tracklist and remix files scraped from Genius
+        create_new_directory(self)    
+        removal_list = []    
+        if not os.path.exists(self.artist_directory + '/tracklist_album_art'):
+            os.makedirs(self.artist_directory + '/tracklist_album_art')
+        
+        if not os.path.exists(self.artist_directory + '/remix'):
+            os.makedirs(self.artist_directory + '/remix')
+        
+        if not os.path.exists(self.artist_directory + '/small'):
+            os.makedirs(self.artist_directory + '/small')
+            
+        clean_directory = self.artist_directory + '/clean'    
+        
+        for lyric in os.listdir(clean_directory):
+            lyric_path = clean_directory + '/' + lyric        
+            if "tracklist" in lyric.lower() or "album art" in lyric.lower():
+                print (lyric + " includes tracklist or album art")
+                #os.remove(lyric_path)
+                removal_list.append(lyric_path)
+                shutil.move(clean_directory + '/' + lyric, self.artist_directory + '/tracklist_album_art' + '/' + lyric)
+        for lyric in os.listdir(clean_directory):
+            if "remix" in lyric.lower():
+                print (lyric + " includes remix")
+                if lyric_path not in removal_list:
+                    removal_list.append(lyric_path)
+                shutil.move(clean_directory + '/' + lyric, self.artist_directory + '/remix' + '/' + lyric)
+        for lyric in os.listdir(clean_directory):
+            if os.path.getsize(lyric_path) <= 200:
+                print (lyric + " size is smaller than 200 bytes")
+                #os.remove(lyric_path)
+                if lyric_path not in removal_list:
+                    removal_list.append(lyric_path)
+                shutil.move(clean_directory + '/' + lyric, self.artist_directory + '/small' + '/' + lyric)
+                
+    #==============================================================================
+    #     for path in removal_list:
+    #         os.remove(path)
+    #==============================================================================
+        return removal_list
+        
+    def iso_artist_lyrics(self):
+        artist = self.artist
+        create_new_directory(self)    
+        clean_directory = self.artist_directory + '/clean'
+        for file in os.listdir(clean_directory):
+            file_path = clean_directory + '/' + file
+            words_orig = open(file_path).read()
+            del_index_list = []
+            d = '['
+            
+            words_split = [e + d for e in words_orig.split('[') if e != '']
+            for i in range(len(words_split)):
+                words_split_line = words_split[i].split('\n')
+                if (':' in words_split_line[0] or '-' in words_split_line[0]):
+                    if artist not in words_split_line[0]:
+                        del_index_list.append(i)
+            new_words_split = []
+            for i in range(len(words_split)):
+                if i not in del_index_list:
+                    new_words_split.append(words_split[i])
+            new_words_split = ''.join(new_words_split)
+            new_words_split = new_words_split[:-2]
+            
+            
+            wr = open(file_path, 'w')
+            wr.write(new_words_split)
+            wr.close()
+        
+        for file in os.listdir(clean_directory):
+            file_path = clean_directory + '/' + file
+            if os.path.getsize(file_path) < 50:
+                shutil.move(file_path, self.artist_directory + '/small')
+    
+            
+    def master_clean(self):
+        remove_extras(self)
+        iso_artist_lyrics(self)
+
