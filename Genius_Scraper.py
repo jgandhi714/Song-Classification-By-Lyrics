@@ -8,8 +8,12 @@ import requests
 import json
 from bs4 import BeautifulSoup
 import os
-from difflib import SequenceMatcher as sm
+#from difflib import SequenceMatcher as sm
 import shutil
+from collections import Counter
+import string
+import scipy
+import matplotlib.pyplot as plt
 
 BASE_URL = 'http://api.genius.com'
 headers = {'Authorization': 'Bearer [insert your bearer token here]'}
@@ -22,6 +26,7 @@ class Genius_Scraper:
         self.artist_directory = "artists/%s" % self.artist
         self.lyrics_directory = self.artist_directory + "/lyrics"
         self.clean_directory = self.artist_directory + "/clean"
+        
     
     def strip(self, s):
         s = s.replace('?', '')
@@ -291,3 +296,56 @@ class Genius_Scraper:
         remove_extras(self)
         iso_artist_lyrics(self)
 
+    def word_count(self):
+        """
+        Perform after the files have been compiled and cleaned via create_txt and master_clean
+        """   
+        
+        #list of stop words (words that appear to be insignificant and should not be included for training the algorithm)        
+        stop_words = ['verse', 'produced', '2x', 'you', 'i', 'the', 'me', 'to', 'it', 'my', 'for', 'a', 'your', 'and', 'chorus', 'on', 'in', 'that', 'im', 'so']
+        
+        word_count = Counter()
+        clean_directory = self.clean_directory
+        for file in os.listdir(clean_directory):
+            file_path = clean_directory + "/" + file
+            words = open(file_path).read()
+            words = words.split()
+            #lower case each word            
+            for i in range(len(words)):
+                words[i] = words[i].lower()
+            #get rid of punctuation
+            words = [''.join(char for char in word  if char not in string.punctuation) for word in words]
+            #take out stop words
+            words = [word for word in words if word not in stop_words]
+            #take out numbers
+            words = [word for word in words if (word.isdigit() == False)]
+            word_count += Counter(words) 
+        word_count_sorted = word_count.most_common()
+        return word_count_sorted
+    
+    def word_count_plot(self):
+        word_count_dict = self.word_count()
+        albums_for_title = self.albums[0]
+        for i in range(1, len(self.albums) - 1):
+            albums_for_title += ", " + self.albums[i]
+        albums_for_title += ", and " + self.albums[-1]
+            
+        
+        x = []
+        y=[] 
+        
+        end_num = 20
+        for value in word_count_dict[0:end_num]:
+            x.append(value[0])
+            y.append(value[1])
+        
+        test_index = scipy.arange(end_num)
+        #y = scipy.array([4,7,6,5])
+        #plt.title(self.artist + " Word Frequency in " + albums_for_title)        
+        f = plt.figure()
+        ax = f.add_axes([0.1, 0.1, 1.5, 1.0])
+        ax.bar(test_index, y, align='center')
+        ax.set_xticks(test_index)
+        ax.set_xticklabels(x)
+        f.suptitle(self.artist + " Word Frequency in " + albums_for_title)
+        f.show()
