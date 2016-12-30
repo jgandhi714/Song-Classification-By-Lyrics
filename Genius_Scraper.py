@@ -19,7 +19,7 @@ import random
 import math
 
 BASE_URL = 'http://api.genius.com'
-headers = {'Authorization': 'Bearer 1fD64UHpd-b-JoPbyL-zmhmweu-VXSPU3HGQ0Nw9EoSiGvAa6HHEwaV2n2rHj55D'}
+headers = {'Authorization': 'Bearer [insert bearer token here]'}
 
 class Genius_Scraper:
     def __init__(self, artist, albums):
@@ -297,8 +297,7 @@ class Genius_Scraper:
             file_path = clean_directory + '/' + file
             if os.path.getsize(file_path) < 50:
                 shutil.move(file_path, self.artist_directory + '/small')
-    
-            
+                
     def master_clean(self):
         self.remove_extras()
         self.iso_artist_lyrics()
