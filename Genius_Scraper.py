@@ -14,9 +14,12 @@ from collections import Counter
 import string
 import scipy
 import matplotlib.pyplot as plt
+import re
+import random
+import math
 
 BASE_URL = 'http://api.genius.com'
-headers = {'Authorization': 'Bearer [insert your bearer token here]'}
+headers = {'Authorization': 'Bearer [insert bearer token here]'}
 
 class Genius_Scraper:
     def __init__(self, artist, albums):
@@ -218,7 +221,7 @@ class Genius_Scraper:
     
     def remove_extras(self):
         #removes files like tracklist and remix files scraped from Genius
-        create_new_directory(self)    
+        self.create_new_directory()    
         removal_list = []    
         if not os.path.exists(self.artist_directory + '/tracklist_album_art'):
             os.makedirs(self.artist_directory + '/tracklist_album_art')
@@ -233,8 +236,8 @@ class Genius_Scraper:
         
         for lyric in os.listdir(clean_directory):
             lyric_path = clean_directory + '/' + lyric        
-            if "tracklist" in lyric.lower() or "album art" in lyric.lower():
-                print (lyric + " includes tracklist or album art")
+            if "tracklist" in lyric.lower() or "album art" in lyric.lower() or "[" in lyric.lower():
+                print (lyric + " includes tracklist, album art, etc.")
                 #os.remove(lyric_path)
                 removal_list.append(lyric_path)
                 shutil.move(clean_directory + '/' + lyric, self.artist_directory + '/tracklist_album_art' + '/' + lyric)
@@ -244,6 +247,7 @@ class Genius_Scraper:
                 if lyric_path not in removal_list:
                     removal_list.append(lyric_path)
                 shutil.move(clean_directory + '/' + lyric, self.artist_directory + '/remix' + '/' + lyric)
+                
         for lyric in os.listdir(clean_directory):
             if os.path.getsize(lyric_path) <= 200:
                 print (lyric + " size is smaller than 200 bytes")
@@ -260,7 +264,7 @@ class Genius_Scraper:
         
     def iso_artist_lyrics(self):
         artist = self.artist
-        create_new_directory(self)    
+        self.create_new_directory()    
         clean_directory = self.artist_directory + '/clean'
         for file in os.listdir(clean_directory):
             file_path = clean_directory + '/' + file
@@ -293,22 +297,24 @@ class Genius_Scraper:
     
             
     def master_clean(self):
-        remove_extras(self)
-        iso_artist_lyrics(self)
+        self.remove_extras()
+        self.iso_artist_lyrics()
 
-    def word_count(self):
+    def word_count(self, directory = None):
         """
         Perform after the files have been compiled and cleaned via create_txt and master_clean
         """   
-        
+        if directory == None:
+            directory = self.clean_directory
         #list of stop words (words that appear to be insignificant and should not be included for training the algorithm)        
         stop_words = ['verse', 'produced', '2x', 'you', 'i', 'the', 'me', 'to', 'it', 'my', 'for', 'a', 'your', 'and', 'chorus', 'on', 'in', 'that', 'im', 'so']
         
         word_count = Counter()
-        clean_directory = self.clean_directory
-        for file in os.listdir(clean_directory):
-            file_path = clean_directory + "/" + file
+        #clean_directory = self.clean_directory
+        for file in os.listdir(directory):
+            file_path = directory + "/" + file
             words = open(file_path).read()
+            words = re.sub("\[[^]]*\]", '', words)
             words = words.split()
             #lower case each word            
             for i in range(len(words)):
@@ -320,11 +326,13 @@ class Genius_Scraper:
             #take out numbers
             words = [word for word in words if (word.isdigit() == False)]
             word_count += Counter(words) 
+        if '' in word_count:
+            del word_count['']
         word_count_sorted = word_count.most_common()
         return word_count_sorted
     
-    def word_count_plot(self):
-        word_count_dict = self.word_count()
+    def word_count_plot(self, directory = None):
+        word_count_dict = self.word_count(directory)
         albums_for_title = self.albums[0]
         for i in range(1, len(self.albums) - 1):
             albums_for_title += ", " + self.albums[i]
@@ -349,3 +357,24 @@ class Genius_Scraper:
         ax.set_xticklabels(x)
         f.suptitle(self.artist + " Word Frequency in " + albums_for_title)
         f.show()
+    
+    def create_random_directory(self, training_data_size = 0):
+        random_directory = self.artist_directory + '/random'        
+        if not os.path.exists(random_directory):
+            os.makedirs(random_directory)
+        else:
+            for file in os.listdir(random_directory):
+                os.remove(random_directory + '/' + file)
+        chosen_set = set()
+        
+        if training_data_size == 0:
+            directory_length = len(os.listdir(self.clean_directory))            
+            training_data_size = math.floor(0.6 * directory_length)
+        while chosen_set == None or len(chosen_set) < training_data_size:
+            chosen_file = random.choice(os.listdir(self.clean_directory))
+            #chosen_path = scraper.clean_directory + '/' + chosen_file
+            chosen_set.add(chosen_file)
+        for file in chosen_set:
+            shutil.copy(self.clean_directory + '/' + file, random_directory + '/' + file)
+        return chosen_set
+            
