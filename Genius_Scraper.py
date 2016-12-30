@@ -19,16 +19,19 @@ import random
 import math
 
 BASE_URL = 'http://api.genius.com'
-headers = {'Authorization': 'Bearer [insert bearer token here]'}
+headers = {'Authorization': 'Bearer 1fD64UHpd-b-JoPbyL-zmhmweu-VXSPU3HGQ0Nw9EoSiGvAa6HHEwaV2n2rHj55D'}
 
 class Genius_Scraper:
     def __init__(self, artist, albums):
         self.artist = artist
-        self.albums = [album.lower() for album in albums]
+        self.albums = albums
+        self.albums_lower = [album.lower() for album in albums]
         self.artist_api_path = self.get_artist_api_path()
         self.artist_directory = "artists/%s" % self.artist
         self.lyrics_directory = self.artist_directory + "/lyrics"
         self.clean_directory = self.artist_directory + "/clean"
+        self.training_directory = self.artist_directory + "/random/training"
+        self.test_directory = self.artist_directory + "/random/test"
         
     
     def strip(self, s):
@@ -172,7 +175,7 @@ class Genius_Scraper:
                     if song['primary_artist']['api_path'] == artist_api_path:
                         try:
                             #check if song is in list of albums
-                            if self.get_song_info(song_api_path)["response"]["song"]["album"]["name"].lower() in self.albums:
+                            if self.get_song_info(song_api_path)["response"]["song"]["album"]["name"].lower() in self.albums_lower:
                                 #check if already downloaded                                
                                 if not os.path.exists(lyric_path):
                                     print(".......CREATING TXT FILE " + song_title)
@@ -299,82 +302,39 @@ class Genius_Scraper:
     def master_clean(self):
         self.remove_extras()
         self.iso_artist_lyrics()
-
-    def word_count(self, directory = None):
-        """
-        Perform after the files have been compiled and cleaned via create_txt and master_clean
-        """   
-        if directory == None:
-            directory = self.clean_directory
-        #list of stop words (words that appear to be insignificant and should not be included for training the algorithm)        
-        stop_words = ['verse', 'produced', '2x', 'you', 'i', 'the', 'me', 'to', 'it', 'my', 'for', 'a', 'your', 'and', 'chorus', 'on', 'in', 'that', 'im', 'so']
         
-        word_count = Counter()
-        #clean_directory = self.clean_directory
-        for file in os.listdir(directory):
-            file_path = directory + "/" + file
-            words = open(file_path).read()
-            words = re.sub("\[[^]]*\]", '', words)
-            words = words.split()
-            #lower case each word            
-            for i in range(len(words)):
-                words[i] = words[i].lower()
-            #get rid of punctuation
-            words = [''.join(char for char in word  if char not in string.punctuation) for word in words]
-            #take out stop words
-            words = [word for word in words if word not in stop_words]
-            #take out numbers
-            words = [word for word in words if (word.isdigit() == False)]
-            word_count += Counter(words) 
-        if '' in word_count:
-            del word_count['']
-        word_count_sorted = word_count.most_common()
-        return word_count_sorted
-    
-    def word_count_plot(self, directory = None):
-        word_count_dict = self.word_count(directory)
-        albums_for_title = self.albums[0]
-        for i in range(1, len(self.albums) - 1):
-            albums_for_title += ", " + self.albums[i]
-        albums_for_title += ", and " + self.albums[-1]
-            
-        
-        x = []
-        y=[] 
-        
-        end_num = 20
-        for value in word_count_dict[0:end_num]:
-            x.append(value[0])
-            y.append(value[1])
-        
-        test_index = scipy.arange(end_num)
-        #y = scipy.array([4,7,6,5])
-        #plt.title(self.artist + " Word Frequency in " + albums_for_title)        
-        f = plt.figure()
-        ax = f.add_axes([0.1, 0.1, 1.5, 1.0])
-        ax.bar(test_index, y, align='center')
-        ax.set_xticks(test_index)
-        ax.set_xticklabels(x)
-        f.suptitle(self.artist + " Word Frequency in " + albums_for_title)
-        f.show()
-    
-    def create_random_directory(self, training_data_size = 0):
-        random_directory = self.artist_directory + '/random'        
-        if not os.path.exists(random_directory):
-            os.makedirs(random_directory)
+    def create_random_directories(self, training_data_size = 0):
+        random_training_directory = self.artist_directory + '/random/training'
+        random_test_directory = self.artist_directory + '/random/test'        
+        if not os.path.exists(random_training_directory) and not os.path.exists(random_test_directory):
+            os.makedirs(random_training_directory)
+            os.makedirs(random_test_directory)
         else:
-            for file in os.listdir(random_directory):
-                os.remove(random_directory + '/' + file)
-        chosen_set = set()
+            for file in os.listdir(random_training_directory):
+                os.remove(random_training_directory + '/' + file)
+            for file in os.listdir(random_test_directory):
+                os.remove(random_test_directory + '/' + file)
+        
+        training_set = set()
+        test_set = set()
         
         if training_data_size == 0:
             directory_length = len(os.listdir(self.clean_directory))            
-            training_data_size = math.floor(0.6 * directory_length)
-        while chosen_set == None or len(chosen_set) < training_data_size:
+            training_data_size = math.ceil(0.6 * directory_length)
+            
+        while training_set == None or len(training_set) < training_data_size:
             chosen_file = random.choice(os.listdir(self.clean_directory))
             #chosen_path = scraper.clean_directory + '/' + chosen_file
-            chosen_set.add(chosen_file)
-        for file in chosen_set:
-            shutil.copy(self.clean_directory + '/' + file, random_directory + '/' + file)
-        return chosen_set
+            training_set.add(chosen_file)
+        for file in training_set:
+            shutil.copy(self.clean_directory + '/' + file, random_training_directory + '/' + file)
+        for file in os.listdir(self.clean_directory):
+            if file not in training_set:
+                test_set.add(file)
+        for file in test_set:
+            shutil.copy(self.clean_directory + '/' + file, random_test_directory + '/' + file)
+        
+            
+        
+        print('training set:' + training_set + ', test set:' + test_set)
             
