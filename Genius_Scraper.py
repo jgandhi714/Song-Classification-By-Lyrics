@@ -8,32 +8,22 @@ import requests
 import json
 from bs4 import BeautifulSoup
 import os
-#from difflib import SequenceMatcher as sm
-import shutil
-from collections import Counter
-import string
-import scipy
-import matplotlib.pyplot as plt
-import re
-import random
-import math
 
 BASE_URL = 'http://api.genius.com'
-headers = {'Authorization': 'Bearer [insert bearer token here]'}
+headers = {'Authorization': 'Bearer 1fD64UHpd-b-JoPbyL-zmhmweu-VXSPU3HGQ0Nw9EoSiGvAa6HHEwaV2n2rHj55D'}
 
 class Genius_Scraper:
-    def __init__(self, artist, albums):
+    def __init__(self, artist, albums, run_scraper = False):
         self.artist = artist
         self.albums = albums
         self.albums_lower = [album.lower() for album in albums]
         self.artist_api_path = self.get_artist_api_path()
         self.artist_directory = "artists/%s" % self.artist
         self.lyrics_directory = self.artist_directory + "/lyrics"
-        self.clean_directory = self.artist_directory + "/clean"
-        self.training_directory = self.artist_directory + "/random/training"
-        self.test_directory = self.artist_directory + "/random/test"
-        
-    
+        if run_scraper == True:
+            self.create_txt()
+
+            
     def strip(self, s):
         s = s.replace('?', '')
         s = s.replace('*', '')
@@ -117,8 +107,6 @@ class Genius_Scraper:
         lyrics = lyrics.replace(u"\xeb", "e") #e with dots on top
         lyrics = lyrics.replace(u"\xe4", "a") #a with dots on top
         lyrics = lyrics.replace(u"\xe7", "c") #c with squigly bottom
-        #lyrics = lyrics.replace("\n", "")
-        #lyrics = lyrics.replace("\r", "")
         return lyrics
     
     def create_txt(self):
@@ -133,9 +121,9 @@ class Genius_Scraper:
         
         artist_api_path = self.artist_api_path
         artist_songs_url = BASE_URL + artist_api_path + "/songs"
+        
         #iterate through as many pages as possible - once an error is hit, break from the loop        
-               
-        for i in range(1, 1000):
+        for i in range(1, 100000):
             j = str(i)            
             
             try:  
@@ -207,133 +195,7 @@ class Genius_Scraper:
                     else:
                         open(blank_path, 'a').close()
                         continue
-            
             except():
-                break
-            
+                break   
         return os.listdir(lyrics_folder_path)
-        
-    def create_new_directory(self):
-        #creates new directory called clean and copies every lyric file
-        clean_directory = self.artist_directory + '/clean'    
-        if not os.path.exists(clean_directory):
-            os.makedirs(clean_directory)
-            for lyric in os.listdir(self.lyrics_directory):
-                if os.path.isfile(self.lyrics_directory + '/' + lyric):
-                    shutil.copy(self.lyrics_directory + '/' + lyric, clean_directory + '/' + lyric)
-    
-    def remove_extras(self):
-        #removes files like tracklist and remix files scraped from Genius
-        self.create_new_directory()    
-        removal_list = []    
-        if not os.path.exists(self.artist_directory + '/tracklist_album_art'):
-            os.makedirs(self.artist_directory + '/tracklist_album_art')
-        
-        if not os.path.exists(self.artist_directory + '/remix'):
-            os.makedirs(self.artist_directory + '/remix')
-        
-        if not os.path.exists(self.artist_directory + '/small'):
-            os.makedirs(self.artist_directory + '/small')
-            
-        clean_directory = self.artist_directory + '/clean'    
-        
-        for lyric in os.listdir(clean_directory):
-            lyric_path = clean_directory + '/' + lyric        
-            if "tracklist" in lyric.lower() or "album art" in lyric.lower() or "[" in lyric.lower():
-                print (lyric + " includes tracklist, album art, etc.")
-                #os.remove(lyric_path)
-                removal_list.append(lyric_path)
-                shutil.move(clean_directory + '/' + lyric, self.artist_directory + '/tracklist_album_art' + '/' + lyric)
-        for lyric in os.listdir(clean_directory):
-            if "remix" in lyric.lower():
-                print (lyric + " includes remix")
-                if lyric_path not in removal_list:
-                    removal_list.append(lyric_path)
-                shutil.move(clean_directory + '/' + lyric, self.artist_directory + '/remix' + '/' + lyric)
-                
-        for lyric in os.listdir(clean_directory):
-            if os.path.getsize(lyric_path) <= 200:
-                print (lyric + " size is smaller than 200 bytes")
-                #os.remove(lyric_path)
-                if lyric_path not in removal_list:
-                    removal_list.append(lyric_path)
-                shutil.move(clean_directory + '/' + lyric, self.artist_directory + '/small' + '/' + lyric)
-                
-    #==============================================================================
-    #     for path in removal_list:
-    #         os.remove(path)
-    #==============================================================================
-        return removal_list
-        
-    def iso_artist_lyrics(self):
-        artist = self.artist
-        self.create_new_directory()    
-        clean_directory = self.artist_directory + '/clean'
-        for file in os.listdir(clean_directory):
-            file_path = clean_directory + '/' + file
-            words_orig = open(file_path).read()
-            del_index_list = []
-            d = '['
-            
-            words_split = [e + d for e in words_orig.split('[') if e != '']
-            for i in range(len(words_split)):
-                words_split_line = words_split[i].split('\n')
-                if (':' in words_split_line[0] or '-' in words_split_line[0]):
-                    if artist not in words_split_line[0]:
-                        del_index_list.append(i)
-            new_words_split = []
-            for i in range(len(words_split)):
-                if i not in del_index_list:
-                    new_words_split.append(words_split[i])
-            new_words_split = ''.join(new_words_split)
-            new_words_split = new_words_split[:-2]
-            
-            
-            wr = open(file_path, 'w')
-            wr.write(new_words_split)
-            wr.close()
-        
-        for file in os.listdir(clean_directory):
-            file_path = clean_directory + '/' + file
-            if os.path.getsize(file_path) < 50:
-                shutil.move(file_path, self.artist_directory + '/small')
-                
-    def master_clean(self):
-        self.remove_extras()
-        self.iso_artist_lyrics()
-        
-    def create_random_directories(self, training_data_size = 0):
-        random_training_directory = self.artist_directory + '/random/training'
-        random_test_directory = self.artist_directory + '/random/test'        
-        if not os.path.exists(random_training_directory) and not os.path.exists(random_test_directory):
-            os.makedirs(random_training_directory)
-            os.makedirs(random_test_directory)
-        else:
-            for file in os.listdir(random_training_directory):
-                os.remove(random_training_directory + '/' + file)
-            for file in os.listdir(random_test_directory):
-                os.remove(random_test_directory + '/' + file)
-        
-        training_set = set()
-        test_set = set()
-        
-        if training_data_size == 0:
-            directory_length = len(os.listdir(self.clean_directory))            
-            training_data_size = math.ceil(0.6 * directory_length)
-            
-        while training_set == None or len(training_set) < training_data_size:
-            chosen_file = random.choice(os.listdir(self.clean_directory))
-            #chosen_path = scraper.clean_directory + '/' + chosen_file
-            training_set.add(chosen_file)
-        for file in training_set:
-            shutil.copy(self.clean_directory + '/' + file, random_training_directory + '/' + file)
-        for file in os.listdir(self.clean_directory):
-            if file not in training_set:
-                test_set.add(file)
-        for file in test_set:
-            shutil.copy(self.clean_directory + '/' + file, random_test_directory + '/' + file)
-        
-            
-        
-        print('training set:' + training_set + ', test set:' + test_set)
-            
+ 
